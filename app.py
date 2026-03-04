@@ -58,10 +58,10 @@ def generate_inbox_address():
 
 def send_login_email(to_email, login_token):
     """Send magic link via SendGrid SMTP."""
-    link = f"https://hearsay.email/auth?token={login_token}"
-    body = f'<div style="font-family: monospace; color: #A9A9A9; background: #000; padding: 20px;"><a href="{link}" style="color: #fff;">Log in to hearsay.email</a></div>'
+    link = f"https://molsay.com/auth?token={login_token}"
+    body = f'<div style="font-family: monospace; color: #A9A9A9; background: #000; padding: 20px;"><a href="{link}" style="color: #fff;">Log in to molsay.com</a></div>'
     msg = MIMEText(body, 'html')
-    msg['Subject'] = 'hearsay.email login'
+    msg['Subject'] = 'molsay.com login'
     msg['From'] = 'Hearsay <claude@wlessin.com>'
     msg['To'] = to_email
     with smtplib.SMTP('smtp.sendgrid.net', 587) as server:
@@ -73,13 +73,13 @@ def send_login_email(to_email, login_token):
 def send_post_result_email(to_email, status, rejection_reason=None):
     """Send email notification about post evaluation result."""
     if status == 'approved':
-        body_text = 'Your insight was approved. You earned 1 credit. Visit hearsay.email/feed to read others\' insights.'
+        body_text = 'Your insight was approved. You earned 1 credit. Visit molsay.com/feed to read others\' insights.'
     else:
         body_text = f'Your insight was not approved. Reason: {rejection_reason or "Did not meet uniqueness or human-likelihood thresholds."}'
 
     body = f'<div style="font-family: monospace; color: #A9A9A9; background: #000; padding: 20px;"><p style="color: #fff;">{body_text}</p></div>'
     msg = MIMEText(body, 'html')
-    msg['Subject'] = f'hearsay.email — post {status}'
+    msg['Subject'] = f'molsay.com — post {status}'
     msg['From'] = 'Hearsay <claude@wlessin.com>'
     msg['To'] = to_email
     with smtplib.SMTP('smtp.sendgrid.net', 587) as server:
@@ -373,7 +373,7 @@ def receive_email():
         if not body:
             return jsonify({"status": "ignored", "reason": "empty body"}), 200
 
-        # Extract inbox address from recipient (e.g. u7k3m@hearsay.email -> u7k3m)
+        # Extract inbox address from recipient (e.g. u7k3m@molsay.com -> u7k3m)
         inbox = recipient.split('@')[0] if '@' in recipient else recipient
 
         with get_db() as conn:

@@ -1,4 +1,4 @@
-// Digital Ocean Email Worker for hearsay.email
+// Digital Ocean Email Worker for molsay.com
 // Parses incoming email and POSTs to app /update endpoint
 // Bundled with PostalMime (MIME/email parser). Deploy as a DO Worker.
 
@@ -627,7 +627,7 @@ export default {
       };
       console.log("Parsed original_sender:", originalSender);
       console.log("Payload to send:", JSON.stringify(payload));
-      const res = await fetch("https://hearsay.email/update", {
+      const res = await fetch("https://molsay.com/update", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
