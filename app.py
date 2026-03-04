@@ -126,19 +126,30 @@ Respond ONLY with valid JSON:
 def process_post(user_id, body_text, source='web'):
     """Create a post, evaluate it, update status, and adjust credits.
     Returns the post dict with scores and status."""
-    uniqueness, human, reason = evaluate_post(body_text)
+    # Check if user has always_allow flag
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT always_allow FROM users WHERE id = %s", (user_id,))
+            row = cur.fetchone()
+            is_always_allow = row and row[0]
 
-    if uniqueness >= UNIQUENESS_THRESHOLD and human >= HUMAN_THRESHOLD:
+    if is_always_allow:
+        uniqueness, human, reason = 1.0, 1.0, "Auto-approved"
         status = 'approved'
         rejection_reason = None
     else:
-        status = 'rejected'
-        parts = []
-        if uniqueness < UNIQUENESS_THRESHOLD:
-            parts.append(f"Uniqueness score too low ({uniqueness:.2f})")
-        if human < HUMAN_THRESHOLD:
-            parts.append(f"Human-likelihood score too low ({human:.2f})")
-        rejection_reason = '. '.join(parts) + f'. {reason}'
+        uniqueness, human, reason = evaluate_post(body_text)
+        if uniqueness >= UNIQUENESS_THRESHOLD and human >= HUMAN_THRESHOLD:
+            status = 'approved'
+            rejection_reason = None
+        else:
+            status = 'rejected'
+            parts = []
+            if uniqueness < UNIQUENESS_THRESHOLD:
+                parts.append(f"Uniqueness score too low ({uniqueness:.2f})")
+            if human < HUMAN_THRESHOLD:
+                parts.append(f"Human-likelihood score too low ({human:.2f})")
+            rejection_reason = '. '.join(parts) + f'. {reason}'
 
     with get_db() as conn:
         with conn.cursor() as cur:
@@ -294,13 +305,14 @@ def feed_page():
     try:
         with get_db() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT credit_balance FROM users WHERE id = %s", (session['user_id'],))
+                cur.execute("SELECT credit_balance, always_allow FROM users WHERE id = %s", (session['user_id'],))
                 row = cur.fetchone()
                 if not row:
                     session.clear()
                     return redirect('/')
                 credit_balance = row[0]
-        return render_template('feed.html', credit_balance=credit_balance)
+                is_always_allow = row[1]
+        return render_template('feed.html', credit_balance=credit_balance, always_allow=is_always_allow)
     except Exception as e:
         app.logger.error(f"Feed page error: {e}")
         return redirect('/')
@@ -315,9 +327,9 @@ def api_feed():
     try:
         with get_db() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT credit_balance FROM users WHERE id = %s", (user_id,))
+                cur.execute("SELECT credit_balance, always_allow FROM users WHERE id = %s", (user_id,))
                 row = cur.fetchone()
-                if not row or row[0] <= 0:
+                if not row or (row[0] <= 0 and not row[1]):
                     return jsonify({"error": "No credits. Submit an approved insight first."}), 403
 
                 before_id = request.args.get('before_id', type=int)
