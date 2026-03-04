@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>feed — hearsay.email</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="sticky-banner">
+        <p>
+            <a href="/submit">submit</a> &nbsp;|&nbsp;
+            <a href="/feed">feed</a> &nbsp;|&nbsp;
+            <a href="/logout">logout</a>
+        </p>
+    </div>
+
+    <div class="page-container has-banner">
+        {% if credit_balance <= 0 %}
+        <div class="no-credits">
+            <p>You need credits to read the feed.</p>
+            <p><a href="/submit">Submit an approved insight</a> to earn credits.</p>
+        </div>
+        {% else %}
+        <div class="feed-header">
+            <h2>feed</h2>
+            <p class="credits">credits: {{ credit_balance }}</p>
+        </div>
+        <div id="feed-list"></div>
+        <div id="feed-loading" style="display: none;">loading...</div>
+        <div id="feed-empty" style="display: none;">
+            <p>No insights yet. Be the first to <a href="/submit">submit one</a>.</p>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if credit_balance > 0 %}
+    <script>
+        let loading = false;
+        let hasMore = true;
+        let oldestId = null;
+
+        function loadFeed(beforeId) {
+            if (loading || !hasMore) return;
+            loading = true;
+            document.getElementById('feed-loading').style.display = 'block';
+
+            let url = '/api/feed';
+            if (beforeId) url += '?before_id=' + beforeId;
+
+            fetch(url)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.error) {
+                        document.getElementById('feed-loading').textContent = data.error;
+                        return;
+                    }
+
+                    const list = document.getElementById('feed-list');
+                    const posts = data.posts || [];
+
+                    if (posts.length === 0 && !oldestId) {
+                        document.getElementById('feed-empty').style.display = 'block';
+                    }
+
+                    posts.forEach(post => {
+                        const el = document.createElement('div');
+                        el.className = 'feed-item';
+
+                        const meta = document.createElement('div');
+                        meta.className = 'feed-meta';
+                        const date = new Date(post.created_at);
+                        meta.textContent = post.author + ' — ' + date.toLocaleDateString();
+
+                        const body = document.createElement('div');
+                        body.className = 'feed-body';
+                        body.textContent = post.body;
+
+                        const sep = document.createElement('hr');
+                        sep.className = 'feed-separator';
+
+                        el.appendChild(meta);
+                        el.appendChild(body);
+                        list.appendChild(el);
+                        list.appendChild(sep);
+
+                        oldestId = post.id;
+                    });
+
+                    hasMore = data.has_more;
+                    loading = false;
+                    document.getElementById('feed-loading').style.display = 'none';
+                })
+                .catch(() => {
+                    loading = false;
+                    document.getElementById('feed-loading').style.display = 'none';
+                });
+        }
+
+        // Initial load
+        loadFeed();
+
+        // Infinite scroll
+        window.addEventListener('scroll', () => {
+            if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 200) {
+                loadFeed(oldestId);
+            }
+        });
+    </script>
+    {% endif %}
+</body>
+</html>

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>submit — hearsay.email</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="sticky-banner">
+        <p>
+            <a href="/submit">submit</a> &nbsp;|&nbsp;
+            <a href="/feed">feed</a> &nbsp;|&nbsp;
+            <a href="/logout">logout</a>
+        </p>
+    </div>
+
+    <div class="page-container has-banner">
+        <div class="submit-header">
+            <h2>share an insight</h2>
+            <p class="credits">credits: {{ credit_balance }}</p>
+            <p class="inbox-info">or email to: <span class="white">{{ inbox_address }}@hearsay.email</span></p>
+        </div>
+
+        <form id="submit-form" onsubmit="return handleSubmit(event)">
+            <textarea id="post-body" placeholder="Something only you would know. A specific observation, insider knowledge, a contrarian take backed by experience..." rows="6" required minlength="20" maxlength="5000"></textarea>
+            <div class="form-footer">
+                <span id="char-count">0 / 5000</span>
+                <button type="submit" id="submit-button">Submit</button>
+            </div>
+        </form>
+
+        <div id="result" class="result-container" style="display: none;">
+            <div id="result-status"></div>
+            <div id="result-scores"></div>
+            <div id="result-reason"></div>
+        </div>
+
+        <div id="history" class="history-container">
+            <!-- Past submissions could go here -->
+        </div>
+    </div>
+
+    <script>
+        const textarea = document.getElementById('post-body');
+        const charCount = document.getElementById('char-count');
+
+        textarea.addEventListener('input', () => {
+            charCount.textContent = textarea.value.length + ' / 5000';
+        });
+
+        function handleSubmit(e) {
+            e.preventDefault();
+            const body = textarea.value.trim();
+            const button = document.getElementById('submit-button');
+            const result = document.getElementById('result');
+
+            if (body.length < 20) {
+                showResult('rejected', null, null, 'Post must be at least 20 characters.');
+                return false;
+            }
+
+            button.disabled = true;
+            button.textContent = 'Evaluating...';
+            result.style.display = 'none';
+
+            fetch('/api/submit', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({body: body})
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    showResult('error', null, null, data.error);
+                } else {
+                    showResult(data.status, data.uniqueness_score, data.human_score, data.rejection_reason);
+                    if (data.status === 'approved') {
+                        textarea.value = '';
+                        charCount.textContent = '0 / 5000';
+                        // Update credit count
+                        const credits = document.querySelector('.credits');
+                        const current = parseInt(credits.textContent.split(': ')[1]) || 0;
+                        credits.textContent = 'credits: ' + (current + 1);
+                    }
+                }
+                button.disabled = false;
+                button.textContent = 'Submit';
+            })
+            .catch(() => {
+                showResult('error', null, null, 'Something went wrong.');
+                button.disabled = false;
+                button.textContent = 'Submit';
+            });
+
+            return false;
+        }
+
+        function showResult(status, uniqueness, human, reason) {
+            const result = document.getElementById('result');
+            const statusEl = document.getElementById('result-status');
+            const scoresEl = document.getElementById('result-scores');
+            const reasonEl = document.getElementById('result-reason');
+
+            result.style.display = 'block';
+
+            if (status === 'approved') {
+                statusEl.textContent = 'APPROVED — +1 credit earned';
+                statusEl.className = 'result-approved';
+            } else if (status === 'rejected') {
+                statusEl.textContent = 'NOT APPROVED';
+                statusEl.className = 'result-rejected';
+            } else {
+                statusEl.textContent = 'ERROR';
+                statusEl.className = 'result-rejected';
+            }
+
+            if (uniqueness !== null && human !== null) {
+                scoresEl.textContent = 'uniqueness: ' + uniqueness.toFixed(2) + ' | human: ' + human.toFixed(2);
+            } else {
+                scoresEl.textContent = '';
+            }
+
+            reasonEl.textContent = reason || '';
+        }
+    </script>
+</body>
+</html>

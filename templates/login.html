@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>hearsay.email</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="page-container">
+        <div class="hero">
+            <h1>hearsay</h1>
+            <p class="tagline">Share something only you would know.</p>
+            <p class="description">Post a unique insight. If it passes our AI evaluation for originality and human authenticity, you earn access to read what others have shared.</p>
+        </div>
+
+        <div class="login-form-container">
+            <form id="login-form" onsubmit="return handleLogin(event)">
+                <input type="email" id="email-input" placeholder="email" required autocomplete="email" autofocus>
+                <button type="submit" id="login-button">Enter</button>
+            </form>
+            <p id="login-status"></p>
+        </div>
+
+        <div class="how-it-works">
+            <p>1. Submit an insight — something specific, personal, or contrarian</p>
+            <p>2. AI evaluates it for uniqueness and human authenticity</p>
+            <p>3. If approved, you earn credits to read others' insights</p>
+        </div>
+    </div>
+
+    <script>
+        function handleLogin(e) {
+            e.preventDefault();
+            const email = document.getElementById('email-input').value.trim();
+            const status = document.getElementById('login-status');
+            const button = document.getElementById('login-button');
+            if (!email) return false;
+
+            button.disabled = true;
+            button.textContent = '...';
+            status.textContent = '';
+
+            fetch('/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({email: email})
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.ok) {
+                    status.textContent = 'Check your email for a login link.';
+                    status.style.color = '#FFFFFF';
+                } else {
+                    status.textContent = data.error || 'Something went wrong.';
+                    button.disabled = false;
+                    button.textContent = 'Enter';
+                }
+            })
+            .catch(() => {
+                status.textContent = 'Something went wrong.';
+                button.disabled = false;
+                button.textContent = 'Enter';
+            });
+
+            return false;
+        }
+    </script>
+</body>
+</html>
