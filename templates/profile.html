@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>profile — molsay.com</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="sticky-banner">
+        <p>
+            <a href="/submit">submit</a> &nbsp;|&nbsp;
+            <a href="/feed">feed</a> &nbsp;|&nbsp;
+            <a href="/profile">profile</a> &nbsp;|&nbsp;
+            <a href="/logout">logout</a>
+        </p>
+    </div>
+
+    <div class="page-container has-banner">
+        <div class="submit-header">
+            <h2>your profile</h2>
+        </div>
+
+        <form id="profile-form" onsubmit="return handleSave(event)">
+            <label for="display-name" style="color: #A9A9A9; font-size: 0.9em; margin-bottom: 4px; display: block;">display name</label>
+            <input type="text" id="display-name" value="{{ display_name }}" placeholder="Your name" required maxlength="100"
+                   style="width: 100%; padding: 10px; background: #1a1a1a; border: 1px solid #333; color: #fff; font-family: inherit; font-size: 1em; box-sizing: border-box; margin-bottom: 16px;">
+
+            <label for="bio" style="color: #A9A9A9; font-size: 0.9em; margin-bottom: 4px; display: block;">about you</label>
+            <textarea id="bio" placeholder="A short description of yourself..." rows="4" maxlength="500"
+                      style="width: 100%; padding: 10px; background: #1a1a1a; border: 1px solid #333; color: #fff; font-family: inherit; font-size: 1em; box-sizing: border-box; resize: vertical;">{{ bio }}</textarea>
+            <div class="form-footer">
+                <span id="char-count">{{ bio|length }} / 500</span>
+                <button type="submit" id="save-button">Save</button>
+            </div>
+        </form>
+
+        <div id="result" style="display: none; margin-top: 16px; color: #fff;"></div>
+    </div>
+
+    <script>
+        const bio = document.getElementById('bio');
+        const charCount = document.getElementById('char-count');
+
+        bio.addEventListener('input', () => {
+            charCount.textContent = bio.value.length + ' / 500';
+        });
+
+        function handleSave(e) {
+            e.preventDefault();
+            const displayName = document.getElementById('display-name').value.trim();
+            const bioText = bio.value.trim();
+            const button = document.getElementById('save-button');
+            const result = document.getElementById('result');
+
+            if (!displayName) {
+                result.style.display = 'block';
+                result.textContent = 'Display name is required.';
+                result.style.color = '#ff6b6b';
+                return false;
+            }
+
+            button.disabled = true;
+            button.textContent = 'Saving...';
+
+            fetch('/api/profile', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({display_name: displayName, bio: bioText})
+            })
+            .then(res => res.json())
+            .then(data => {
+                result.style.display = 'block';
+                if (data.ok) {
+                    result.textContent = 'Saved.';
+                    result.style.color = '#fff';
+                    setTimeout(() => { window.location.href = '/submit'; }, 800);
+                } else {
+                    result.textContent = data.error || 'Something went wrong.';
+                    result.style.color = '#ff6b6b';
+                }
+                button.disabled = false;
+                button.textContent = 'Save';
+            })
+            .catch(() => {
+                result.style.display = 'block';
+                result.textContent = 'Something went wrong.';
+                result.style.color = '#ff6b6b';
+                button.disabled = false;
+                button.textContent = 'Save';
+            });
+
+            return false;
+        }
+    </script>
+</body>
+</html>

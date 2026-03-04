@@ -232,14 +232,15 @@ def auth_callback():
     try:
         with get_db() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT id FROM users WHERE login_token = %s", (token,))
+                cur.execute("SELECT id, display_name FROM users WHERE login_token = %s", (token,))
                 row = cur.fetchone()
                 if not row:
                     return redirect('/')
                 session['user_id'] = row[0]
                 cur.execute("UPDATE users SET login_token = NULL WHERE id = %s", (row[0],))
                 conn.commit()
-        return redirect('/submit')
+                has_profile = bool(row[1])
+        return redirect('/submit' if has_profile else '/profile')
     except Exception as e:
         app.logger.error(f"Auth error: {e}")
         return redirect('/')
@@ -249,6 +250,52 @@ def auth_callback():
 def logout():
     session.clear()
     return redirect('/')
+
+
+@app.route('/profile')
+def profile_page():
+    if 'user_id' not in session:
+        return redirect('/')
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT display_name, bio FROM users WHERE id = %s", (session['user_id'],))
+                row = cur.fetchone()
+                if not row:
+                    session.clear()
+                    return redirect('/')
+        return render_template('profile.html', display_name=row[0] or '', bio=row[1] or '')
+    except Exception as e:
+        app.logger.error(f"Profile page error: {e}")
+        return redirect('/')
+
+
+@app.route('/api/profile', methods=['POST'])
+def api_profile():
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({"error": "Not authenticated"}), 401
+    data = request.get_json(silent=True) or {}
+    display_name = (data.get('display_name') or '').strip()
+    bio = (data.get('bio') or '').strip()
+    if not display_name:
+        return jsonify({"error": "Display name is required"}), 400
+    if len(display_name) > 100:
+        return jsonify({"error": "Display name too long"}), 400
+    if len(bio) > 500:
+        return jsonify({"error": "Bio must be under 500 characters"}), 400
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE users SET display_name = %s, bio = %s, updated_at = NOW() WHERE id = %s",
+                    (display_name, bio, user_id)
+                )
+                conn.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        app.logger.error(f"Profile update error: {e}")
+        return jsonify({"error": "Server error"}), 500
 
 
 @app.route('/submit')
