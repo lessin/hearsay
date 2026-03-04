@@ -3,31 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>submit — molsay.com</title>
+    <title>molsay.com</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
     <div class="sticky-banner">
         <p>
-            <a href="/submit">submit</a> &nbsp;|&nbsp;
-            <a href="/feed">feed</a> &nbsp;|&nbsp;
             <a href="/profile">profile</a> &nbsp;|&nbsp;
             <a href="/logout">logout</a>
         </p>
     </div>
 
     <div class="page-container has-banner">
-        <div class="submit-header">
-            <h2>share an insight</h2>
-            <p class="credits">credits: {{ credit_balance }}</p>
-            <p class="inbox-info">or email to: <span class="white">{{ inbox_address }}@molsay.com</span></p>
-        </div>
-
         <form id="submit-form" onsubmit="return handleSubmit(event)">
-            <textarea id="post-body" placeholder="Something only you would know. A specific observation, insider knowledge, a contrarian take backed by experience..." rows="6" required minlength="20" maxlength="5000"></textarea>
+            <textarea id="post-body" placeholder="Share something only you would know..." rows="3" required minlength="20" maxlength="5000"></textarea>
             <div class="form-footer">
                 <span id="char-count">0 / 5000</span>
-                <button type="submit" id="submit-button">Submit</button>
+                <button type="submit" id="submit-button">Share</button>
             </div>
         </form>
 
@@ -37,9 +29,19 @@
             <div id="result-reason"></div>
         </div>
 
-        <div id="history" class="history-container">
-            <!-- Past submissions could go here -->
+        {% if can_see_feed %}
+        <hr class="feed-separator" style="margin-top: 25px;">
+        <div id="feed-list"></div>
+        <div id="feed-loading" style="display: none; text-align: center; padding: 20px; font-size: 14px;">loading...</div>
+        <div id="feed-empty" style="display: none; text-align: center; padding: 40px 20px;">
+            <p style="font-size: 16px;">No insights yet. Be the first to share one.</p>
         </div>
+        {% else %}
+        <hr class="feed-separator" style="margin-top: 25px;">
+        <div style="text-align: center; padding: 40px 20px;">
+            <p>Submit an approved insight to unlock the feed.</p>
+        </div>
+        {% endif %}
     </div>
 
     <script>
@@ -79,19 +81,17 @@
                     if (data.status === 'approved') {
                         textarea.value = '';
                         charCount.textContent = '0 / 5000';
-                        // Update credit count
-                        const credits = document.querySelector('.credits');
-                        const current = parseInt(credits.textContent.split(': ')[1]) || 0;
-                        credits.textContent = 'credits: ' + (current + 1);
+                        // Reload to show new post in feed
+                        setTimeout(() => { window.location.reload(); }, 1200);
                     }
                 }
                 button.disabled = false;
-                button.textContent = 'Submit';
+                button.textContent = 'Share';
             })
             .catch(() => {
                 showResult('error', null, null, 'Something went wrong.');
                 button.disabled = false;
-                button.textContent = 'Submit';
+                button.textContent = 'Share';
             });
 
             return false;
@@ -124,6 +124,78 @@
 
             reasonEl.textContent = reason || '';
         }
+
+        {% if can_see_feed %}
+        // Feed loading
+        let loading = false;
+        let hasMore = true;
+        let oldestId = null;
+
+        function loadFeed(beforeId) {
+            if (loading || !hasMore) return;
+            loading = true;
+            document.getElementById('feed-loading').style.display = 'block';
+
+            let url = '/api/feed';
+            if (beforeId) url += '?before_id=' + beforeId;
+
+            fetch(url)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.error) {
+                        document.getElementById('feed-loading').textContent = data.error;
+                        return;
+                    }
+
+                    const list = document.getElementById('feed-list');
+                    const posts = data.posts || [];
+
+                    if (posts.length === 0 && !oldestId) {
+                        document.getElementById('feed-empty').style.display = 'block';
+                    }
+
+                    posts.forEach(post => {
+                        const el = document.createElement('div');
+                        el.className = 'feed-item';
+
+                        const meta = document.createElement('div');
+                        meta.className = 'feed-meta';
+                        const date = new Date(post.created_at);
+                        meta.textContent = post.author + ' \u2014 ' + date.toLocaleDateString();
+
+                        const body = document.createElement('div');
+                        body.className = 'feed-body';
+                        body.textContent = post.body;
+
+                        const sep = document.createElement('hr');
+                        sep.className = 'feed-separator';
+
+                        el.appendChild(meta);
+                        el.appendChild(body);
+                        list.appendChild(el);
+                        list.appendChild(sep);
+
+                        oldestId = post.id;
+                    });
+
+                    hasMore = data.has_more;
+                    loading = false;
+                    document.getElementById('feed-loading').style.display = 'none';
+                })
+                .catch(() => {
+                    loading = false;
+                    document.getElementById('feed-loading').style.display = 'none';
+                });
+        }
+
+        loadFeed();
+
+        window.addEventListener('scroll', () => {
+            if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 200) {
+                loadFeed(oldestId);
+            }
+        });
+        {% endif %}
     </script>
 </body>
 </html>

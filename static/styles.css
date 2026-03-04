@@ -208,7 +208,7 @@ a:hover {
     color: #A9A9A9;
 }
 
-#submit-button {
+#submit-button, .btn {
     padding: 10px 25px;
     background-color: #000000;
     color: #FFFFFF;
@@ -219,11 +219,11 @@ a:hover {
     font-family: inherit;
 }
 
-#submit-button:hover {
+#submit-button:hover, .btn:hover {
     background-color: #333333;
 }
 
-#submit-button:disabled {
+#submit-button:disabled, .btn:disabled {
     opacity: 0.5;
     cursor: default;
 }

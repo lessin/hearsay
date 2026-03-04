@@ -306,17 +306,19 @@ def submit_page():
         with get_db() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT email, inbox_address, credit_balance FROM users WHERE id = %s",
+                    "SELECT email, inbox_address, credit_balance, always_allow FROM users WHERE id = %s",
                     (session['user_id'],)
                 )
                 user = cur.fetchone()
                 if not user:
                     session.clear()
                     return redirect('/')
+        can_see_feed = user[2] > 0 or user[3]
         return render_template('submit.html',
                                user_email=user[0],
                                inbox_address=user[1],
-                               credit_balance=user[2])
+                               credit_balance=user[2],
+                               can_see_feed=can_see_feed)
     except Exception as e:
         app.logger.error(f"Submit page error: {e}")
         return redirect('/')
@@ -347,22 +349,7 @@ def api_submit():
 
 @app.route('/feed')
 def feed_page():
-    if 'user_id' not in session:
-        return redirect('/')
-    try:
-        with get_db() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT credit_balance, always_allow FROM users WHERE id = %s", (session['user_id'],))
-                row = cur.fetchone()
-                if not row:
-                    session.clear()
-                    return redirect('/')
-                credit_balance = row[0]
-                is_always_allow = row[1]
-        return render_template('feed.html', credit_balance=credit_balance, always_allow=is_always_allow)
-    except Exception as e:
-        app.logger.error(f"Feed page error: {e}")
-        return redirect('/')
+    return redirect('/submit')
 
 
 @app.route('/api/feed')
