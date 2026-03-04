@@ -9,8 +9,9 @@ import re
 import uuid
 import string
 import random
+import smtplib
 import logging
-import urllib.request
+from email.mime.text import MIMEText
 from flask import Flask, request, jsonify, render_template, session, redirect
 import psycopg2
 from contextlib import contextmanager
@@ -56,23 +57,15 @@ def generate_inbox_address():
 
 
 def send_email(to_email, subject, html_body):
-    """Send email via SendGrid HTTP API (v3)."""
-    payload = json.dumps({
-        "personalizations": [{"to": [{"email": to_email}]}],
-        "from": {"email": "claude@wlessin.com", "name": "Hearsay"},
-        "subject": subject,
-        "content": [{"type": "text/html", "value": html_body}]
-    }).encode('utf-8')
-    req = urllib.request.Request(
-        'https://api.sendgrid.com/v3/mail/send',
-        data=payload,
-        headers={
-            'Authorization': f'Bearer {SENDGRID_PASS}',
-            'Content-Type': 'application/json'
-        },
-        method='POST'
-    )
-    urllib.request.urlopen(req, timeout=10)
+    """Send email via SendGrid SMTP."""
+    msg = MIMEText(html_body, 'html')
+    msg['Subject'] = subject
+    msg['From'] = 'Hearsay <claude@wlessin.com>'
+    msg['To'] = to_email
+    with smtplib.SMTP('smtp.sendgrid.net', 587) as server:
+        server.starttls()
+        server.login(SENDGRID_USER, SENDGRID_PASS)
+        server.send_message(msg)
 
 
 def send_login_email(to_email, login_token):
