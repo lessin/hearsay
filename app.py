@@ -32,7 +32,7 @@ logging.basicConfig(level=logging.INFO)
 app.logger.setLevel(logging.INFO)
 
 SENDGRID_USER = 'apikey'
-SENDGRID_PASS = os.environ.get('SENDGRID_PASSWORD', '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')
+SENDGRID_PASS = os.environ.get('SENDGRID_PASSWORD', '')
 
 UNIQUENESS_THRESHOLD = 0.6
 HUMAN_THRESHOLD = 0.7
