@@ -56,36 +56,39 @@ def generate_inbox_address():
     return ''.join(random.choices(chars, k=5))
 
 
+def send_email(to_email, subject, html_body):
+    """Send email via SendGrid SMTP."""
+    msg = MIMEText(html_body, 'html')
+    msg['Subject'] = subject
+    msg['From'] = 'Hearsay <claude@wlessin.com>'
+    msg['To'] = to_email
+    try:
+        with smtplib.SMTP('smtp.sendgrid.net', 587, timeout=10) as server:
+            server.starttls()
+            server.login(SENDGRID_USER, SENDGRID_PASS)
+            server.send_message(msg)
+    except Exception:
+        with smtplib.SMTP_SSL('smtp.sendgrid.net', 465, timeout=10) as server:
+            server.login(SENDGRID_USER, SENDGRID_PASS)
+            server.send_message(msg)
+
+
 def send_login_email(to_email, login_token):
     """Send magic link via SendGrid SMTP."""
     link = f"https://molsay.com/auth?token={login_token}"
     body = f'<div style="font-family: monospace; color: #A9A9A9; background: #000; padding: 20px;"><a href="{link}" style="color: #fff;">Log in to molsay.com</a></div>'
-    msg = MIMEText(body, 'html')
-    msg['Subject'] = 'molsay.com login'
-    msg['From'] = 'Hearsay <claude@wlessin.com>'
-    msg['To'] = to_email
-    with smtplib.SMTP('smtp.sendgrid.net', 587) as server:
-        server.starttls()
-        server.login(SENDGRID_USER, SENDGRID_PASS)
-        server.send_message(msg)
+    send_email(to_email, 'molsay.com login', body)
 
 
 def send_post_result_email(to_email, status, rejection_reason=None):
     """Send email notification about post evaluation result."""
     if status == 'approved':
-        body_text = 'Your insight was approved. You earned 1 credit. Visit molsay.com/feed to read others\' insights.'
+        body_text = 'Your insight was approved. You earned 1 credit. Visit molsay.com to read others\' insights.'
     else:
         body_text = f'Your insight was not approved. Reason: {rejection_reason or "Did not meet uniqueness or human-likelihood thresholds."}'
 
     body = f'<div style="font-family: monospace; color: #A9A9A9; background: #000; padding: 20px;"><p style="color: #fff;">{body_text}</p></div>'
-    msg = MIMEText(body, 'html')
-    msg['Subject'] = f'molsay.com — post {status}'
-    msg['From'] = 'Hearsay <claude@wlessin.com>'
-    msg['To'] = to_email
-    with smtplib.SMTP('smtp.sendgrid.net', 587) as server:
-        server.starttls()
-        server.login(SENDGRID_USER, SENDGRID_PASS)
-        server.send_message(msg)
+    send_email(to_email, f'molsay.com — post {status}', body)
 
 
 def evaluate_post(body_text):
