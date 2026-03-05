@@ -82,7 +82,6 @@
                     if (data.status === 'approved') {
                         textarea.value = '';
                         charCount.textContent = '0 / 5000';
-                        // Reload to show new post in feed
                         setTimeout(() => { window.location.reload(); }, 1200);
                     }
                 }
@@ -107,7 +106,7 @@
             result.style.display = 'block';
 
             if (status === 'approved') {
-                statusEl.textContent = 'APPROVED — feed unlocked for 24 hours';
+                statusEl.textContent = 'APPROVED \u2014 feed unlocked for 24 hours';
                 statusEl.className = 'result-approved';
             } else if (status === 'rejected') {
                 statusEl.textContent = 'NOT APPROVED';
@@ -124,6 +123,103 @@
             }
 
             reasonEl.textContent = reason || '';
+        }
+
+        // --- Like / Comment helpers ---
+
+        function toggleLike(postId, btn) {
+            fetch('/api/like', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({post_id: postId})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) return;
+                const countSpan = btn.querySelector('.like-count');
+                countSpan.textContent = data.like_count || '';
+                btn.classList.toggle('liked', data.liked);
+                btn.querySelector('.like-icon').textContent = data.liked ? '\u25C6' : '\u25C7';
+            });
+        }
+
+        function toggleComments(postId, container) {
+            const existing = container.querySelector('.comments-section');
+            if (existing) {
+                existing.remove();
+                return;
+            }
+
+            const section = document.createElement('div');
+            section.className = 'comments-section';
+            section.innerHTML = '<div class="comments-loading">loading comments...</div>';
+            container.appendChild(section);
+
+            fetch('/api/comments?post_id=' + postId)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) {
+                        section.innerHTML = '<div class="comments-loading">' + data.error + '</div>';
+                        return;
+                    }
+                    renderComments(section, postId, data.comments);
+                });
+        }
+
+        function renderComments(section, postId, comments) {
+            let html = '';
+            comments.forEach(c => {
+                const date = new Date(c.created_at);
+                const authorClass = c.is_own ? 'comment-author-own' : '';
+                html += '<div class="comment-item">' +
+                    '<span class="comment-meta ' + authorClass + '">' + escapeHtml(c.author) + ' \u2014 ' + date.toLocaleDateString() + '</span>' +
+                    '<span class="comment-body">' + escapeHtml(c.body) + '</span>' +
+                    '</div>';
+            });
+
+            html += '<div class="comment-form">' +
+                '<input type="text" class="comment-input" placeholder="Add a comment..." maxlength="2000">' +
+                '<button class="comment-submit" onclick="submitComment(' + postId + ', this)">Reply</button>' +
+                '</div>';
+
+            section.innerHTML = html;
+        }
+
+        function submitComment(postId, btn) {
+            const input = btn.previousElementSibling;
+            const body = input.value.trim();
+            if (!body) return;
+
+            btn.disabled = true;
+            fetch('/api/comments', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({post_id: postId, body: body})
+            })
+            .then(r => r.json())
+            .then(data => {
+                btn.disabled = false;
+                if (data.error) return;
+                input.value = '';
+                // Re-fetch and re-render comments
+                const section = btn.closest('.comments-section');
+                fetch('/api/comments?post_id=' + postId)
+                    .then(r => r.json())
+                    .then(d => {
+                        if (!d.error) renderComments(section, postId, d.comments);
+                    });
+                // Update comment count on the button
+                const postEl = btn.closest('.feed-item');
+                const countSpan = postEl.querySelector('.comment-count');
+                if (countSpan) countSpan.textContent = parseInt(countSpan.textContent || '0') + 1;
+            })
+            .catch(() => { btn.disabled = false; });
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
         }
 
         {% if can_see_feed %}
@@ -157,22 +253,43 @@
 
                     posts.forEach(post => {
                         const el = document.createElement('div');
-                        el.className = 'feed-item';
+                        el.className = 'feed-item' + (post.is_own ? ' feed-item-own' : '');
 
                         const meta = document.createElement('div');
                         meta.className = 'feed-meta';
                         const date = new Date(post.created_at);
-                        meta.textContent = post.author + ' \u2014 ' + date.toLocaleDateString();
+                        const authorLabel = post.is_own ? post.author + ' (you)' : post.author;
+                        meta.textContent = authorLabel + ' \u2014 ' + date.toLocaleDateString();
 
                         const body = document.createElement('div');
                         body.className = 'feed-body';
                         body.textContent = post.body;
 
-                        const sep = document.createElement('hr');
-                        sep.className = 'feed-separator';
+                        const actions = document.createElement('div');
+                        actions.className = 'feed-actions';
+
+                        // Like button
+                        const likeBtn = document.createElement('button');
+                        likeBtn.className = 'action-btn' + (post.user_liked ? ' liked' : '');
+                        likeBtn.innerHTML = '<span class="like-icon">' + (post.user_liked ? '\u25C6' : '\u25C7') + '</span> <span class="like-count">' + (post.like_count || '') + '</span>';
+                        likeBtn.onclick = () => toggleLike(post.id, likeBtn);
+
+                        // Comment button
+                        const commentBtn = document.createElement('button');
+                        commentBtn.className = 'action-btn';
+                        commentBtn.innerHTML = '\u25A1 <span class="comment-count">' + (post.comment_count || '') + '</span>';
+                        commentBtn.onclick = () => toggleComments(post.id, el);
+
+                        actions.appendChild(likeBtn);
+                        actions.appendChild(commentBtn);
 
                         el.appendChild(meta);
                         el.appendChild(body);
+                        el.appendChild(actions);
+
+                        const sep = document.createElement('hr');
+                        sep.className = 'feed-separator';
+
                         list.appendChild(el);
                         list.appendChild(sep);
 

@@ -49,6 +49,37 @@ def get_db():
             conn.close()
 
 
+def ensure_tables():
+    """Create likes and comments tables if they don't exist."""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS likes (
+                    id SERIAL PRIMARY KEY,
+                    post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    UNIQUE(post_id, user_id)
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS comments (
+                    id SERIAL PRIMARY KEY,
+                    post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    body TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            """)
+            conn.commit()
+
+
+try:
+    ensure_tables()
+except Exception as e:
+    logging.warning(f"Could not ensure tables on startup: {e}")
+
+
 def generate_inbox_address():
     """Generate a short random inbox address like u7k3m."""
     chars = string.ascii_lowercase + string.digits
@@ -140,7 +171,7 @@ Respond ONLY with valid JSON:
 
 
 def process_post(user_id, body_text, source='web'):
-    """Create a post, evaluate it, update status, and adjust credits.
+    """Create a post, evaluate it, update status.
     Returns the post dict with scores and status."""
     # Check if user has always_allow flag
     with get_db() as conn:
@@ -383,17 +414,23 @@ def api_feed():
 
                 if before_id:
                     cur.execute(
-                        """SELECT p.id, p.body, p.created_at, u.display_name, u.inbox_address
+                        """SELECT p.id, p.body, p.created_at, u.display_name, u.inbox_address, p.user_id,
+                                  (SELECT COUNT(*) FROM likes WHERE post_id = p.id) as like_count,
+                                  EXISTS(SELECT 1 FROM likes WHERE post_id = p.id AND user_id = %s) as user_liked,
+                                  (SELECT COUNT(*) FROM comments WHERE post_id = p.id) as comment_count
                            FROM posts p JOIN users u ON p.user_id = u.id
-                           WHERE p.status = 'approved' AND p.user_id != %s AND p.id < %s
+                           WHERE p.status = 'approved' AND p.id < %s
                            ORDER BY p.id DESC LIMIT %s""",
                         (user_id, before_id, limit)
                     )
                 else:
                     cur.execute(
-                        """SELECT p.id, p.body, p.created_at, u.display_name, u.inbox_address
+                        """SELECT p.id, p.body, p.created_at, u.display_name, u.inbox_address, p.user_id,
+                                  (SELECT COUNT(*) FROM likes WHERE post_id = p.id) as like_count,
+                                  EXISTS(SELECT 1 FROM likes WHERE post_id = p.id AND user_id = %s) as user_liked,
+                                  (SELECT COUNT(*) FROM comments WHERE post_id = p.id) as comment_count
                            FROM posts p JOIN users u ON p.user_id = u.id
-                           WHERE p.status = 'approved' AND p.user_id != %s
+                           WHERE p.status = 'approved'
                            ORDER BY p.id DESC LIMIT %s""",
                         (user_id, limit)
                     )
@@ -404,13 +441,126 @@ def api_feed():
                 "id": r[0],
                 "body": r[1],
                 "created_at": r[2].isoformat() if r[2] else None,
-                "author": r[3] or r[4] or "anon"
+                "author": r[3] or r[4] or "anon",
+                "is_own": r[5] == user_id,
+                "like_count": r[6],
+                "user_liked": r[7],
+                "comment_count": r[8]
             }
             for r in rows
         ]
         return jsonify({"posts": posts, "has_more": len(posts) == limit})
     except Exception as e:
         app.logger.error(f"Feed error: {e}")
+        return jsonify({"error": "Server error"}), 500
+
+
+@app.route('/api/like', methods=['POST'])
+def api_like():
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({"error": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True) or {}
+    post_id = data.get('post_id')
+    if not post_id:
+        return jsonify({"error": "post_id required"}), 400
+
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                # Toggle like
+                cur.execute("SELECT id FROM likes WHERE post_id = %s AND user_id = %s", (post_id, user_id))
+                if cur.fetchone():
+                    cur.execute("DELETE FROM likes WHERE post_id = %s AND user_id = %s", (post_id, user_id))
+                    liked = False
+                else:
+                    cur.execute("INSERT INTO likes (post_id, user_id) VALUES (%s, %s)", (post_id, user_id))
+                    liked = True
+                cur.execute("SELECT COUNT(*) FROM likes WHERE post_id = %s", (post_id,))
+                count = cur.fetchone()[0]
+                conn.commit()
+        return jsonify({"liked": liked, "like_count": count})
+    except Exception as e:
+        app.logger.error(f"Like error: {e}")
+        return jsonify({"error": "Server error"}), 500
+
+
+@app.route('/api/comments', methods=['GET'])
+def api_get_comments():
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({"error": "Not authenticated"}), 401
+
+    post_id = request.args.get('post_id', type=int)
+    if not post_id:
+        return jsonify({"error": "post_id required"}), 400
+
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """SELECT c.id, c.body, c.created_at, u.display_name, u.inbox_address, c.user_id
+                       FROM comments c JOIN users u ON c.user_id = u.id
+                       WHERE c.post_id = %s ORDER BY c.id ASC""",
+                    (post_id,)
+                )
+                rows = cur.fetchall()
+
+        comments = [
+            {
+                "id": r[0],
+                "body": r[1],
+                "created_at": r[2].isoformat() if r[2] else None,
+                "author": r[3] or r[4] or "anon",
+                "is_own": r[5] == user_id
+            }
+            for r in rows
+        ]
+        return jsonify({"comments": comments})
+    except Exception as e:
+        app.logger.error(f"Get comments error: {e}")
+        return jsonify({"error": "Server error"}), 500
+
+
+@app.route('/api/comments', methods=['POST'])
+def api_post_comment():
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({"error": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True) or {}
+    post_id = data.get('post_id')
+    body = (data.get('body') or '').strip()
+
+    if not post_id:
+        return jsonify({"error": "post_id required"}), 400
+    if not body:
+        return jsonify({"error": "Comment body required"}), 400
+    if len(body) > 2000:
+        return jsonify({"error": "Comment must be under 2000 characters"}), 400
+
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO comments (post_id, user_id, body) VALUES (%s, %s, %s) RETURNING id, created_at",
+                    (post_id, user_id, body)
+                )
+                row = cur.fetchone()
+                cur.execute("SELECT display_name, inbox_address FROM users WHERE id = %s", (user_id,))
+                urow = cur.fetchone()
+                conn.commit()
+
+        return jsonify({
+            "id": row[0],
+            "body": body,
+            "created_at": row[1].isoformat() if row[1] else None,
+            "author": urow[0] or urow[1] or "anon",
+            "is_own": True
+        })
+    except Exception as e:
+        app.logger.error(f"Post comment error: {e}")
         return jsonify({"error": "Server error"}), 500
 
 
