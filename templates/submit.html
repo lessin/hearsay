@@ -40,7 +40,7 @@
         {% else %}
         <hr class="feed-separator" style="margin-top: 25px;">
         <div style="text-align: center; padding: 40px 20px;">
-            <p>Submit an approved insight to unlock the feed.</p>
+            <p>Post an insight to unlock 24 hours of feed access.</p>
         </div>
         {% endif %}
     </div>
@@ -107,7 +107,7 @@
             result.style.display = 'block';
 
             if (status === 'approved') {
-                statusEl.textContent = 'APPROVED — +1 credit earned';
+                statusEl.textContent = 'APPROVED — feed unlocked for 24 hours';
                 statusEl.className = 'result-approved';
             } else if (status === 'rejected') {
                 statusEl.textContent = 'NOT APPROVED';

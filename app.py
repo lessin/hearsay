@@ -1,7 +1,7 @@
 """
 Hearsay — Unique Human Insight Platform
 Users post insights, AI evaluates for uniqueness + human-likelihood.
-Approved posts earn credits to read others' insights.
+Must post at least once every 24 hours to access the feed.
 """
 import os
 import json
@@ -82,10 +82,21 @@ def send_login_email(to_email, login_token):
     send_email(to_email, 'molsay.com login', body)
 
 
+def has_posted_recently(user_id):
+    """Check if user has an approved post in the last 24 hours."""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM posts WHERE user_id = %s AND status = 'approved' AND created_at > NOW() - INTERVAL '24 hours' LIMIT 1",
+                (user_id,)
+            )
+            return cur.fetchone() is not None
+
+
 def send_post_result_email(to_email, status, rejection_reason=None):
     """Send email notification about post evaluation result."""
     if status == 'approved':
-        body_text = 'Your insight was approved. You earned 1 credit. Visit molsay.com to read others\' insights.'
+        body_text = 'Your insight was approved. You now have 24-hour access to the feed. Visit molsay.com to read others\' insights.'
     else:
         body_text = f'Your insight was not approved. Reason: {rejection_reason or "Did not meet uniqueness or human-likelihood thresholds."}'
 
@@ -164,12 +175,6 @@ def process_post(user_id, body_text, source='web'):
                 (user_id, body_text, source, uniqueness, human, status, rejection_reason)
             )
             post_row = cur.fetchone()
-
-            if status == 'approved':
-                cur.execute(
-                    "UPDATE users SET credit_balance = credit_balance + 1, updated_at = NOW() WHERE id = %s",
-                    (user_id,)
-                )
 
             conn.commit()
 
@@ -308,21 +313,21 @@ def submit_page():
     if 'user_id' not in session:
         return redirect('/')
     try:
+        user_id = session['user_id']
         with get_db() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT email, inbox_address, credit_balance, always_allow FROM users WHERE id = %s",
-                    (session['user_id'],)
+                    "SELECT email, inbox_address, always_allow FROM users WHERE id = %s",
+                    (user_id,)
                 )
                 user = cur.fetchone()
                 if not user:
                     session.clear()
                     return redirect('/')
-        can_see_feed = user[2] > 0 or user[3]
+        can_see_feed = user[2] or has_posted_recently(user_id)
         return render_template('submit.html',
                                user_email=user[0],
                                inbox_address=user[1],
-                               credit_balance=user[2],
                                can_see_feed=can_see_feed)
     except Exception as e:
         app.logger.error(f"Submit page error: {e}")
@@ -366,10 +371,12 @@ def api_feed():
     try:
         with get_db() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT credit_balance, always_allow FROM users WHERE id = %s", (user_id,))
+                cur.execute("SELECT always_allow FROM users WHERE id = %s", (user_id,))
                 row = cur.fetchone()
-                if not row or (row[0] <= 0 and not row[1]):
-                    return jsonify({"error": "No credits. Submit an approved insight first."}), 403
+                if not row:
+                    return jsonify({"error": "User not found."}), 401
+                if not row[0] and not has_posted_recently(user_id):
+                    return jsonify({"error": "Post an insight to unlock 24 hours of feed access."}), 403
 
                 before_id = request.args.get('before_id', type=int)
                 limit = 20
